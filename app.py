@@ -413,18 +413,53 @@ html,body,
   letter-spacing:.06em;text-transform:uppercase;font-weight:600!important}
 
 /* inputs */
-[data-testid="stFileUploader"]{background:var(--bg)!important;
-  border:1.5px dashed var(--border)!important;border-radius:10px!important}
-textarea,input[type="text"],input[type="password"]{
-  background:var(--bg)!important;border:1px solid var(--border)!important;
-  border-radius:8px!important;color:var(--text)!important;
-  font-family:var(--sans)!important;font-size:.85rem!important}
-textarea:focus,input:focus{border-color:var(--accent)!important;
-  box-shadow:0 0 0 3px rgba(67,97,238,.1)!important}
+/* inputs */
+[data-testid="stFileUploader"]{
+  background:var(--bg)!important;
+  border:1.5px dashed var(--border)!important;
+  border-radius:10px!important
+}
 
+/* FIX BLACK UPLOAD BOX */
+[data-testid="stFileUploaderDropzone"]{
+  background:white !important;
+  border:1.5px dashed var(--border)!important;
+  border-radius:10px !important;
+  color:var(--text) !important;
+}
+
+[data-testid="stFileUploaderDropzone"] *{
+  color:var(--text) !important;
+}
+/* FIX BROWSE FILES BUTTON BLACK BACKGROUND */
+[data-testid="stFileUploader"] button {
+  background: #ffffff !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+/* hover */
+[data-testid="stFileUploader"] button:hover {
+  background: #f5f7fb !important;
+}
+textarea,input[type="text"],input[type="password"]{
+  background:var(--bg)!important;
+  border:1px solid var(--border)!important;
+  border-radius:8px!important;
+  color:var(--text)!important;
+  font-family:var(--sans)!important;
+  font-size:.85rem!important
+}
+
+textarea:focus,input:focus{
+  border-color:var(--accent)!important;
+  box-shadow:0 0 0 3px rgba(67,97,238,.1)!important
+}
 /* buttons */
 .stButton>button{
-  background:var(--accent)!important;color:#fff!important;border:none!important;
+  background:var(--accent)!important;color:white!important;border:none!important;
   border-radius:8px!important;font-family:var(--sans)!important;font-weight:600!important;
   font-size:.85rem!important;padding:.65rem 1.4rem!important;width:100%!important}
 .stButton>button:hover{filter:brightness(1.1)!important}
