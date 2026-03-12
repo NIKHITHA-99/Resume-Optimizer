@@ -3,7 +3,6 @@
 An AI-powered resume optimization tool that analyzes your resume against job descriptions and rewrites it for maximum ATS (Applicant Tracking System) compatibility.
 
 🔗 **Live App:** [resume-optimizer-kcoqjjnzomyzdygkvrztv6.streamlit.app](https://resume-optimizer-kcoqjjnzomyzdygkvrztv6.streamlit.app/)
-
 ---
 
 ## 📌 Table of Contents
@@ -37,7 +36,7 @@ An AI-powered resume optimization tool that analyzes your resume against job des
 |---|---|---|
 | Upload your PDF | Get scored 0-100 | AI rewrites for 75%+ |
 
-🔗 Try it live: [Click Here](https://resume-optimizer-kcoqjjnzomyzdygkvrztv6.streamlit.app/)
+🔗 Try it live: [Click Here]([https://resume-optimizer-kcoqjjnzomyzdygkvrztv6.streamlit.app/)/)
 
 ---
 
