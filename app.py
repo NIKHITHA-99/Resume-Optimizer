@@ -1,4 +1,3 @@
-
 """
 AI Resume Optimizer — Fully Self-Contained app.py
 All logic embedded. No external .py modules needed.
@@ -24,13 +23,23 @@ st.set_page_config(
 )
 
 # ══════════════════════════════════════════════════════════════
-#  LOAD .env SILENTLY
+#  LOAD API KEY — works both locally (.env) and Streamlit Cloud
 # ══════════════════════════════════════════════════════════════
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
     pass
+
+def get_api_key():
+    # 1. Try Streamlit Cloud secrets first
+    try:
+        k = st.secrets["GEMINI_API_KEY"]
+        if k: return k.strip()
+    except Exception:
+        pass
+    # 2. Fallback to .env
+    return os.getenv("GEMINI_API_KEY", "").strip()
 
 # ══════════════════════════════════════════════════════════════
 #  PACKAGE AVAILABILITY FLAGS (silent, no st.* calls here)
@@ -67,21 +76,19 @@ except Exception:
     _REPORTLAB = False
 
 # ══════════════════════════════════════════════════════════════
-#  CORE FUNCTIONS (all self-contained)
+#  CORE FUNCTIONS
 # ══════════════════════════════════════════════════════════════
 
-# ── PDF Extraction ───────────────────────────────────────────
 def extract_pdf(uploaded_file) -> str:
     if not _PYPDF:
         return ""
     try:
         reader = PdfReader(uploaded_file)
         return "\n".join(p.extract_text() or "" for p in reader.pages)
-    except Exception as e:
+    except Exception:
         return ""
 
 
-# ── Text Cleaning ────────────────────────────────────────────
 def clean_text(text: str) -> str:
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s+#.\-/]", " ", text)
@@ -89,7 +96,6 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-# ── Term Extraction ──────────────────────────────────────────
 _STOP = {
     "the","a","an","and","or","but","in","on","at","to","for","of",
     "with","by","from","as","is","was","are","be","been","have","has",
@@ -149,15 +155,13 @@ def norm_set(terms: set) -> set:
     return ns
 
 
-# ── ATS Score ────────────────────────────────────────────────
 def compute_ats_score(resume_text: str, jd_text: str):
-    """Returns (score: int, missing_terms: list, coverage: dict)"""
     jd_terms  = extract_terms(jd_text)  | extract_tech(jd_text)
     res_terms = extract_terms(resume_text) | extract_tech(resume_text)
 
-    # Keyword match (50%)
     jd_norm  = norm_set(jd_terms)
     res_norm = norm_set(res_terms)
+
     if jd_norm:
         kw_score = sum(
             1 for t in jd_terms
@@ -166,7 +170,6 @@ def compute_ats_score(resume_text: str, jd_text: str):
     else:
         kw_score = 100.0
 
-    # TF-IDF similarity (30%)
     if _SKLEARN:
         try:
             vec  = TfidfVectorizer(ngram_range=(1,2), max_features=1500)
@@ -177,7 +180,6 @@ def compute_ats_score(resume_text: str, jd_text: str):
     else:
         sim_score = kw_score
 
-    # Frequency (20%)
     if _SKLEARN:
         jd_freq   = Counter(clean_text(jd_text).split())
         important = {w for w,c in jd_freq.items() if c >= 2 and len(w) > 3}
@@ -191,14 +193,12 @@ def compute_ats_score(resume_text: str, jd_text: str):
         final = min(final + 45, 100)
     final = int(min(100, final))
 
-    # Missing terms
     missing_norm = jd_norm - res_norm
     missing = sorted(
         [t for t in jd_terms if normalize(t) in missing_norm],
         key=len, reverse=True
     )[:40]
 
-    # Coverage
     covered = jd_norm & res_norm
     coverage = {
         "total_jd_terms":      len(jd_norm),
@@ -211,7 +211,6 @@ def compute_ats_score(resume_text: str, jd_text: str):
     return final, missing, coverage
 
 
-# ── Categorize Keywords ──────────────────────────────────────
 def categorize(keywords: list) -> dict:
     cats = {"Technical Skills":[],"Soft Skills":[],"Tools & Platforms":[],"Other":[]}
     tech_kw = ["python","java","ai","ml","cloud","database","react","node","api",
@@ -233,7 +232,6 @@ def categorize(keywords: list) -> dict:
     return cats
 
 
-# ── Section Detection ────────────────────────────────────────
 def detect_sections(text: str):
     keys = ["education","experience","projects","skills","certifications",
             "achievements","summary","objective"]
@@ -242,15 +240,20 @@ def detect_sections(text: str):
             [k.title() for k in keys if k not in tl])
 
 
-# ── Gemini Enhancement ───────────────────────────────────────
-def enhance_resume(resume_text: str, jd_text: str, api_key: str) -> str:
+# ── Gemini Enhancement — with visible error logging ──────────
+def enhance_resume(resume_text: str, jd_text: str, api_key: str) -> tuple:
+    """Returns (enhanced_text, error_log)"""
+    errors = []
+
     if not _GENAI:
-        return resume_text
+        errors.append("google-generativeai not installed")
+        return resume_text, errors
 
     try:
         genai.configure(api_key=api_key)
     except Exception as e:
-        return resume_text
+        errors.append(f"API config failed: {e}")
+        return resume_text, errors
 
     prompt = f"""You are an elite ATS resume optimizer.
 Transform this resume to achieve a MINIMUM 75% ATS match against the job description.
@@ -292,16 +295,18 @@ Generate the enhanced resume:"""
             )
             result = response.text.strip()
             if len(result) > 200:
-                return result
-        except Exception:
+                return result, []  # success, no errors
+            else:
+                errors.append(f"{model_name}: response too short ({len(result)} chars)")
+        except Exception as e:
+            errors.append(f"{model_name}: {str(e)}")
             continue
 
-    return resume_text  # safe fallback
+    return resume_text, errors  # all models failed
 
 
 # ── PDF Builder ──────────────────────────────────────────────
 def build_pdf(text: str) -> bytes:
-    # Clean unicode
     for k,v in {"\u2013":"-","\u2014":"-","\u2022":"-",
                 "\u201c":'"',"\u201d":'"',"\u2018":"'","\u2019":"'"}.items():
         text = text.replace(k,v)
@@ -363,7 +368,6 @@ def build_pdf(text: str) -> bytes:
         except Exception:
             pass
 
-    # fpdf fallback
     try:
         from fpdf import FPDF
         pdf = FPDF(); pdf.set_margins(20,20,20); pdf.add_page()
@@ -405,6 +409,7 @@ html,body,
 .main .block-container{padding:0 2.8rem 4rem;max-width:1260px}
 [data-testid="stHeader"]{background:transparent!important}
 [data-testid="stToolbar"]{display:none!important}
+[data-testid="collapsedControl"]{display:block!important;visibility:visible!important;opacity:1!important;}
 
 /* sidebar */
 [data-testid="stSidebar"]{background:var(--white)!important;border-right:1px solid var(--border)!important}
@@ -413,36 +418,25 @@ html,body,
   letter-spacing:.06em;text-transform:uppercase;font-weight:600!important}
 
 /* inputs */
-/* inputs */
 [data-testid="stFileUploader"]{
-  background:var(--bg)!important;
+  background:#f4f6fb!important;
   border:1.5px dashed var(--border)!important;
   border-radius:10px!important
 }
-
-/* FIX BLACK UPLOAD BOX */
 [data-testid="stFileUploaderDropzone"]{
-  background:white !important;
-  border:1.5px dashed var(--border)!important;
-  border-radius:10px !important;
-  color:var(--text) !important;
+  background:#f4f6fb!important;
+  border-radius:10px!important;
+  color:var(--text)!important;
 }
-
 [data-testid="stFileUploaderDropzone"] *{
-  color:var(--text) !important;
+  color:var(--text)!important;
+  background:#f4f6fb!important;
 }
-/* FIX BROWSE FILES BUTTON BLACK BACKGROUND */
-[data-testid="stFileUploader"] button {
-  background: #ffffff !important;
-  color: var(--text) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 8px !important;
-  box-shadow: none !important;
-}
-
-/* hover */
-[data-testid="stFileUploader"] button:hover {
-  background: #f5f7fb !important;
+[data-testid="stFileUploader"] button{
+  background:#ffffff!important;
+  color:var(--text)!important;
+  border:1px solid var(--border)!important;
+  border-radius:8px!important;
 }
 textarea,input[type="text"],input[type="password"]{
   background:var(--bg)!important;
@@ -452,14 +446,14 @@ textarea,input[type="text"],input[type="password"]{
   font-family:var(--sans)!important;
   font-size:.85rem!important
 }
-
 textarea:focus,input:focus{
   border-color:var(--accent)!important;
   box-shadow:0 0 0 3px rgba(67,97,238,.1)!important
 }
+
 /* buttons */
 .stButton>button{
-  background:var(--accent)!important;color:white!important;border:none!important;
+  background:var(--accent)!important;color:#fff!important;border:none!important;
   border-radius:8px!important;font-family:var(--sans)!important;font-weight:600!important;
   font-size:.85rem!important;padding:.65rem 1.4rem!important;width:100%!important}
 .stButton>button:hover{filter:brightness(1.1)!important}
@@ -588,12 +582,12 @@ with st.sidebar:
     st.markdown("## 🎯 Resume Optimizer")
     st.markdown("<br>", unsafe_allow_html=True)
 
-    api_key = os.getenv("GEMINI_API_KEY","").strip()
+    api_key = get_api_key()
     if api_key:
         st.markdown(
             '<div style="background:#edfbf6;border:1px solid #b0eeda;border-radius:8px;'
             'padding:10px 14px;font-size:.8rem;color:#05704f;margin-bottom:12px;">'
-            '✅ API key loaded from .env</div>', unsafe_allow_html=True)
+            '✅ API key loaded</div>', unsafe_allow_html=True)
     else:
         api_key = st.text_input("Gemini API Key", type="password",
                                 placeholder="AIza… (or set GEMINI_API_KEY in .env)")
@@ -607,16 +601,15 @@ with st.sidebar:
     st.markdown("<br>", unsafe_allow_html=True)
     run_btn = st.button("🚀  Analyze & Optimize")
 
-    # Package status — clean, informative
     st.markdown("---")
     st.markdown('<div style="font-size:.7rem;font-weight:700;letter-spacing:.08em;'
                 'text-transform:uppercase;color:#7b82a0;margin-bottom:6px;">Package Status</div>',
                 unsafe_allow_html=True)
     pkgs = [
-        ("pypdf",      _PYPDF,     "PDF reading"),
-        ("scikit-learn",_SKLEARN,  "ATS scoring"),
-        ("google-genai",_GENAI,    "AI rewrite"),
-        ("reportlab",  _REPORTLAB, "PDF export"),
+        ("pypdf",       _PYPDF,     "PDF reading"),
+        ("scikit-learn",_SKLEARN,   "ATS scoring"),
+        ("google-genai",_GENAI,     "AI rewrite"),
+        ("reportlab",   _REPORTLAB, "PDF export"),
     ]
     for name, ok, desc in pkgs:
         icon  = "✅" if ok else "⚠️"
@@ -694,8 +687,8 @@ if run_btn:
         found_secs, missing_secs = detect_sections(resume_text)
         prog.progress(50, text="Generating AI-optimized resume…")
 
-        # 4 — Enhance
-        enhanced = enhance_resume(resume_text, job_desc, api_key)
+        # 4 — Enhance (now returns tuple)
+        enhanced, ai_errors = enhance_resume(resume_text, job_desc, api_key)
         prog.progress(80, text="Scoring enhanced resume…")
 
         # 5 — Score AFTER
@@ -703,8 +696,14 @@ if run_btn:
             score_after, _, _ = compute_ats_score(enhanced, job_desc)
         else:
             score_after = score_before
+
         prog.progress(100, text="Done!")
         prog.empty()
+
+        # Show AI errors if any
+        if ai_errors:
+            for err in ai_errors:
+                st.markdown(f'<div class="ca-err">⚠️ AI Error: {err}</div>', unsafe_allow_html=True)
 
         st.session_state.update({
             "resume_text":  resume_text,
@@ -830,7 +829,8 @@ with tab2:
     cl = cov.get("covered_list",[])
     if cl:
         st.markdown('<div class="sh" style="margin-top:20px">Already Present ✅</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="chips">{"".join(f'<span> class="chip cok">{k}</span>' for k in cl[:25])}</div>', unsafe_allow_html=True)
+        chips_ok = "".join(f'<span class="chip cok">{k}</span>' for k in cl[:25])
+        st.markdown(f'<div class="chips">{chips_ok}</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="sh" style="margin-top:20px">💡 How to Add Missing Keywords</div>', unsafe_allow_html=True)
     st.markdown("""
