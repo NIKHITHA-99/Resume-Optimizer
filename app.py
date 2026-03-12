@@ -280,8 +280,6 @@ Generate the enhanced resume:"""
     models_to_try = [
         "gemini-2.5-flash",
         "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
     ]
 
     for model_name in models_to_try:
